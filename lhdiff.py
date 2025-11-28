@@ -2,39 +2,40 @@ import difflib
 import math
 from collections import Counter
 
+# --- STEP 1: PREPROCESSING ---
 def preprocess_file(filepath):
+    """
+    Reads a file and normalizes it by converting to lowercase and stripping whitespace.
+    This ensures that 'FileReader' and 'filereader' are treated as the same.
+    """
     clean_lines = []
     with open(filepath, 'r') as file:
         for line in file:
             clean_lines.append(line.strip().lower())
     return clean_lines
+
+# --- STEP 2: ANCHOR DETECTION ---
 def detect_unchanged_lines(file_a_lines, file_b_lines):
     """
-    Uses Python's difflib (Unix diff algorithm) to find lines that are identical.
+    Uses the Unix 'diff' algorithm (via Python's difflib) to find lines
+    that have not changed at all. These serve as 'anchors'.
     """
-    # Initialize the matcher with our two lists of lines
     matcher = difflib.SequenceMatcher(None, file_a_lines, file_b_lines)
-    
-    # get_matching_blocks returns chunks of lines that match exactly
-    # It returns a list of tuples: (start_index_in_a, start_index_in_b, length_of_match)
     matching_blocks = matcher.get_matching_blocks()
     
     print("\n--- Step 2: Unchanged Lines Detected ---")
     for block in matching_blocks:
         start_a, start_b, length = block
-        
-        # We ignore matches of length 0 (end of file marker)
         if length > 0:
-            # Grab the actual text from the first file to show what matched
-            # We assume if they match, the text is the same in both
             matched_lines = file_a_lines[start_a : start_a + length]
-            
             for i, line in enumerate(matched_lines):
-                # Print: Line Number in A <-> Line Number in B : Content
-                # We add 1 to indices because humans count from 1, computers from 0
                 print(f"Line {start_a + i + 1} (Old) == Line {start_b + i + 1} (New) : {line}")
 
 def get_unmatched_lines(file_a_lines, file_b_lines):
+    """
+    Extracts the lines that *did not* match during the anchor detection.
+    Returns two lists: Left List (Old File) and Right List (New File).
+    """
     matcher = difflib.SequenceMatcher(None, file_a_lines, file_b_lines)
     left_list = []
     right_list = []
@@ -51,7 +52,12 @@ def get_unmatched_lines(file_a_lines, file_b_lines):
         last_b = start_b + length
     return left_list, right_list
 
+# --- STEP 3: SIMILARITY METRICS ---
 def levenshtein_distance(s1, s2):
+    """
+    Calculates the minimum number of edits (inserts, deletes, subs) to turn s1 into s2.
+    Used for Content Similarity.
+    """
     if len(s1) < len(s2):
         return levenshtein_distance(s2, s1)
     if len(s2) == 0:
@@ -68,63 +74,47 @@ def levenshtein_distance(s1, s2):
     return previous_row[-1]
 
 def get_content_similarity(s1, s2):
+    """
+    Returns a score (0.0 to 1.0) based on Levenshtein Distance.
+    """
     dist = levenshtein_distance(s1, s2)
     max_len = max(len(s1), len(s2))
     if max_len == 0: return 1.0
     return 1 - (dist / max_len)
 
-# --- NEW: Helper to get neighbor lines (Context) ---
 def get_context_string(lines, index, window=4):
     """
-    Grabs 4 lines before and 4 lines after the given index.
-    Combines them into one big string.
+    Grabs the 'Context': 4 lines before and 4 lines after the target line.
     """
     start = max(0, index - window)
     end = min(len(lines), index + window + 1)
-    # Join all neighboring lines with spaces
     return " ".join(lines[start:end])
 
-# --- NEW: Cosine Similarity Function ---
 def get_cosine_similarity(text1, text2):
     """
-    Calculates Cosine Similarity between two strings.
-    1. Turn strings into "Vectors" (word counts).
-    2. Calculate Dot Product.
-    3. Divide by magnitude.
+    Calculates Cosine Similarity for Context (Bag of Words approach).
     """
-    # Tokenize: simple split by space
     vec1 = Counter(text1.split())
     vec2 = Counter(text2.split())
-    
-    # Get all unique words
     intersection = set(vec1.keys()) & set(vec2.keys())
-    
-    # Calculate Dot Product (A . B)
     numerator = sum([vec1[x] * vec2[x] for x in intersection])
-    
-    # Calculate Magnitude (|A| * |B|)
     sum1 = sum([vec1[x]**2 for x in vec1.keys()])
     sum2 = sum([vec2[x]**2 for x in vec2.keys()])
     denominator = math.sqrt(sum1) * math.sqrt(sum2)
     
-    if denominator == 0:
-        return 0.0
-    else:
-        return numerator / denominator
+    if denominator == 0: return 0.0
+    else: return numerator / denominator
 
-# ... (Keep all functions: preprocess, unmatched, levenshtein, cosine, etc. UP TO HERE) ...
-
-# --- NEW: Improved Bi-Directional Split Check ---
+# --- STEP 5: SPLIT DETECTION ---
 def check_line_splits(l_text, r_idx, right_list_data):
     """
-    Checks if merging the match with its neighbors (Next OR Previous) improves the score.
+    Checks if merging the match with a neighbor (Next OR Previous) improves the score.
+    Logic based on LHDiff paper (Slide 357).
     Returns: (merged_text, neighbor_index_to_mark_as_used)
     """
     current_match_text = ""
-    neighbor_text = ""
-    neighbor_idx = -1
     
-    # 1. Locate our current match in the list
+    # 1. Locate current match
     current_list_pos = -1
     for i, (idx, text) in enumerate(right_list_data):
         if idx == r_idx:
@@ -136,44 +126,35 @@ def check_line_splits(l_text, r_idx, right_list_data):
 
     dist_single = levenshtein_distance(l_text, current_match_text)
     
-    # 2. Try Merging with NEXT Line (Forward Split)
-    # Check if next element exists AND is the immediate next line number
+    # 2. Try Forward Split (Merge with Next Line)
     if current_list_pos + 1 < len(right_list_data):
         next_idx, next_text = right_list_data[current_list_pos + 1]
         if next_idx == r_idx + 1:
             merged_fwd = current_match_text + " " + next_text
             dist_fwd = levenshtein_distance(l_text, merged_fwd)
-            
-            # If Forward Merge is better, return it
             if dist_fwd < dist_single:
                 return merged_fwd, next_idx
 
-    # 3. Try Merging with PREVIOUS Line (Backward Split)
-    # Check if prev element exists AND is the immediate prev line number
+    # 3. Try Backward Split (Merge with Previous Line)
     if current_list_pos > 0:
         prev_idx, prev_text = right_list_data[current_list_pos - 1]
         if prev_idx == r_idx - 1:
             merged_bwd = prev_text + " " + current_match_text
             dist_bwd = levenshtein_distance(l_text, merged_bwd)
-            
-            # If Backward Merge is better, return it
             if dist_bwd < dist_single:
                 return merged_bwd, prev_idx
                 
     return None, None
 
-# --- Main Execution ---
+# --- MAIN EXECUTION ---
 if __name__ == "__main__":
     lines_a = preprocess_file("source_a.txt")
     lines_b = preprocess_file("source_b.txt")
     
-    # 1. Anchors (Optional print)
-    # detect_unchanged_lines(lines_a, lines_b) 
-
-    # 2. Get Unmatched
+    # Get the raw list of changed lines
     left, right = get_unmatched_lines(lines_a, lines_b)
     
-    print("--- Final Output: Mappings with Bi-Directional Split Detection ---")
+    print("--- Final Output: LHDiff Python Prototype v1 ---")
     
     used_new_lines = set()
     
@@ -184,11 +165,13 @@ if __name__ == "__main__":
         
         context_a = get_context_string(lines_a, l_idx)
         
-        # FIND BEST SINGLE MATCH
+        # --- STEP 4: GENERATE CANDIDATES & RESOLVE CONFLICTS ---
         for r_idx, r_text in right:
             if r_idx in used_new_lines: continue
             
             context_b = get_context_string(lines_b, r_idx)
+            
+            # Weighted Average Formula (Slide 288)
             content_sim = get_content_similarity(l_text, r_text)
             context_sim = get_cosine_similarity(context_a, context_b)
             combined_score = (0.6 * content_sim) + (0.4 * context_sim)
@@ -198,20 +181,18 @@ if __name__ == "__main__":
                 best_match_index = r_idx
                 best_match_text = r_text
         
-        # CHECK FOR SPLITS
-        if best_score > 0.40: # Lowered slightly to catch the split parts
-            # Try to see if merging with a neighbor helps
+        # --- CHECK THRESHOLD & SPLITS ---
+        if best_score > 0.40: 
+            # Step 5: Check if this is actually a split line
             improved_match, neighbor_idx = check_line_splits(l_text, best_match_index, right)
             
             if improved_match:
                 print(f"[SPLIT DETECTED] Old Line {l_idx+1} maps to combined lines {min(best_match_index, neighbor_idx)+1} & {max(best_match_index, neighbor_idx)+1}")
                 print(f"                 Original: '{l_text}'")
                 print(f"                 Mapped:   '{improved_match}'")
-                
-                # Mark both lines as used
                 used_new_lines.add(best_match_index)
                 used_new_lines.add(neighbor_idx) 
             else:
                 print(f"[MATCH] Old Line {l_idx+1} -> New Line {best_match_index+1}")
-                print(f"        '{l_text}' -> '{best_match_text}'")
+                print(f"        '{l_text}' -> '{best_match_text}' (Score: {best_score:.2f})")
                 used_new_lines.add(best_match_index)

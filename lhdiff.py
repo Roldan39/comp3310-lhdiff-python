@@ -1,5 +1,7 @@
 import difflib
 import math
+import argparse
+import sys
 from collections import Counter
 
 # --- STEP 1: PREPROCESSING ---
@@ -148,15 +150,37 @@ def check_line_splits(l_text, r_idx, right_list_data):
 
 # --- MAIN EXECUTION ---
 if __name__ == "__main__":
-    lines_a = preprocess_file("source_a.txt")
-    lines_b = preprocess_file("source_b.txt")
+    # 1. Set up the Argument Parser
+    # This lets us run the script with flags: python lhdiff.py file1 file2
+    parser = argparse.ArgumentParser(description="LHDiff: Language-Independent Line Tracking")
+    parser.add_argument("old_file", help="Path to the original file (Old Version)")
+    parser.add_argument("new_file", help="Path to the modified file (New Version)")
     
-    # Get the raw list of changed lines
+    # Check if arguments were actually passed
+    if len(sys.argv) < 3:
+        parser.print_help()
+        sys.exit(1)
+        
+    args = parser.parse_args()
+    
+    print(f"--- LHDiff Processing ---")
+    print(f"Old File: {args.old_file}")
+    print(f"New File: {args.new_file}")
+
+    # 2. Read the files provided in the command line
+    try:
+        lines_a = preprocess_file(args.old_file)
+        lines_b = preprocess_file(args.new_file)
+    except FileNotFoundError as e:
+        print(f"Error: Could not find file. {e}")
+        sys.exit(1)
+    
+    # 3. Run the Algorithm (Same logic as before)
     left, right = get_unmatched_lines(lines_a, lines_b)
     
-    print("--- Final Output: LHDiff Python Prototype v1 ---")
-    
     used_new_lines = set()
+    
+    print("\n--- Mappings ---")
     
     for l_idx, l_text in left:
         best_score = -1
@@ -165,13 +189,11 @@ if __name__ == "__main__":
         
         context_a = get_context_string(lines_a, l_idx)
         
-        # --- STEP 4: GENERATE CANDIDATES & RESOLVE CONFLICTS ---
         for r_idx, r_text in right:
             if r_idx in used_new_lines: continue
             
             context_b = get_context_string(lines_b, r_idx)
             
-            # Weighted Average Formula (Slide 288)
             content_sim = get_content_similarity(l_text, r_text)
             context_sim = get_cosine_similarity(context_a, context_b)
             combined_score = (0.6 * content_sim) + (0.4 * context_sim)
@@ -181,18 +203,14 @@ if __name__ == "__main__":
                 best_match_index = r_idx
                 best_match_text = r_text
         
-        # --- CHECK THRESHOLD & SPLITS ---
         if best_score > 0.40: 
-            # Step 5: Check if this is actually a split line
             improved_match, neighbor_idx = check_line_splits(l_text, best_match_index, right)
             
             if improved_match:
-                print(f"[SPLIT DETECTED] Old Line {l_idx+1} maps to combined lines {min(best_match_index, neighbor_idx)+1} & {max(best_match_index, neighbor_idx)+1}")
-                print(f"                 Original: '{l_text}'")
-                print(f"                 Mapped:   '{improved_match}'")
+                # Output formatted for easy reading or parsing later
+                print(f"{l_idx+1} -> {min(best_match_index, neighbor_idx)+1},{max(best_match_index, neighbor_idx)+1} [Split] (Score: {best_score:.2f})")
                 used_new_lines.add(best_match_index)
                 used_new_lines.add(neighbor_idx) 
             else:
-                print(f"[MATCH] Old Line {l_idx+1} -> New Line {best_match_index+1}")
-                print(f"        '{l_text}' -> '{best_match_text}' (Score: {best_score:.2f})")
+                print(f"{l_idx+1} -> {best_match_index+1} (Score: {best_score:.2f})")
                 used_new_lines.add(best_match_index)

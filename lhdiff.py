@@ -4,66 +4,44 @@ import argparse
 import sys
 from collections import Counter
 
-# --- STEP 1: PREPROCESSING ---
+# ==========================================
+# CONFIGURATION (The "Tuning Knobs")
+# ==========================================
+# Team: Adjust these values to improve accuracy!
+CONTENT_WEIGHT = 0.6   # How much the line text matters (Slide 288 says 0.6)
+CONTEXT_WEIGHT = 0.4   # How much the neighbors matter (Slide 288 says 0.4)
+MATCH_THRESHOLD = 0.40 # Minimum score required to declare a match
+WINDOW_SIZE = 4        # How many lines above/below to look at for context
+# ==========================================
+# CORE LOGIC (The "Engine")
+# ==========================================
+
 def preprocess_file(filepath):
     """
-    Reads a file and normalizes it by converting to lowercase and stripping whitespace.
-    This ensures that 'FileReader' and 'filereader' are treated as the same.
+    Step 1: Preprocessing
+    Reads a file, strips whitespace, and converts to lowercase.
     """
     clean_lines = []
-    with open(filepath, 'r') as file:
-        for line in file:
-            clean_lines.append(line.strip().lower())
+    # robust encoding handling for various file types
+    try:
+        with open(filepath, 'r', encoding='utf-8', errors='ignore') as file:
+            for line in file:
+                clean_lines.append(line.strip().lower())
+    except FileNotFoundError:
+        print(f"Error: File not found {filepath}")
+        return []
     return clean_lines
 
-# --- STEP 2: ANCHOR DETECTION ---
-def detect_unchanged_lines(file_a_lines, file_b_lines):
-    """
-    Uses the Unix 'diff' algorithm (via Python's difflib) to find lines
-    that have not changed at all. These serve as 'anchors'.
-    """
-    matcher = difflib.SequenceMatcher(None, file_a_lines, file_b_lines)
-    matching_blocks = matcher.get_matching_blocks()
-    
-    print("\n--- Step 2: Unchanged Lines Detected ---")
-    for block in matching_blocks:
-        start_a, start_b, length = block
-        if length > 0:
-            matched_lines = file_a_lines[start_a : start_a + length]
-            for i, line in enumerate(matched_lines):
-                print(f"Line {start_a + i + 1} (Old) == Line {start_b + i + 1} (New) : {line}")
+def get_context_string(lines, index, window=4):
+    """ Helper: Grabs 4 lines before and after for Context Similarity. """
+    start = max(0, index - window)
+    end = min(len(lines), index + window + 1)
+    return " ".join(lines[start:end])
 
-def get_unmatched_lines(file_a_lines, file_b_lines):
-    """
-    Extracts the lines that *did not* match during the anchor detection.
-    Returns two lists: Left List (Old File) and Right List (New File).
-    """
-    matcher = difflib.SequenceMatcher(None, file_a_lines, file_b_lines)
-    left_list = []
-    right_list = []
-    last_a = 0
-    last_b = 0
-    
-    for match in matcher.get_matching_blocks():
-        start_a, start_b, length = match
-        for i in range(last_a, start_a):
-            left_list.append((i, file_a_lines[i]))
-        for i in range(last_b, start_b):
-            right_list.append((i, file_b_lines[i]))
-        last_a = start_a + length
-        last_b = start_b + length
-    return left_list, right_list
-
-# --- STEP 3: SIMILARITY METRICS ---
 def levenshtein_distance(s1, s2):
-    """
-    Calculates the minimum number of edits (inserts, deletes, subs) to turn s1 into s2.
-    Used for Content Similarity.
-    """
-    if len(s1) < len(s2):
-        return levenshtein_distance(s2, s1)
-    if len(s2) == 0:
-        return len(s1)
+    """ Step 3a: Content Similarity Math """
+    if len(s1) < len(s2): return levenshtein_distance(s2, s1)
+    if len(s2) == 0: return len(s1)
     previous_row = range(len(s2) + 1)
     for i, c1 in enumerate(s1):
         current_row = [i + 1]
@@ -76,26 +54,14 @@ def levenshtein_distance(s1, s2):
     return previous_row[-1]
 
 def get_content_similarity(s1, s2):
-    """
-    Returns a score (0.0 to 1.0) based on Levenshtein Distance.
-    """
+    """ Returns 0.0 to 1.0 based on Levenshtein Distance """
     dist = levenshtein_distance(s1, s2)
     max_len = max(len(s1), len(s2))
     if max_len == 0: return 1.0
     return 1 - (dist / max_len)
 
-def get_context_string(lines, index, window=4):
-    """
-    Grabs the 'Context': 4 lines before and 4 lines after the target line.
-    """
-    start = max(0, index - window)
-    end = min(len(lines), index + window + 1)
-    return " ".join(lines[start:end])
-
 def get_cosine_similarity(text1, text2):
-    """
-    Calculates Cosine Similarity for Context (Bag of Words approach).
-    """
+    """ Step 3b: Context Similarity Math (Bag of Words) """
     vec1 = Counter(text1.split())
     vec2 = Counter(text2.split())
     intersection = set(vec1.keys()) & set(vec2.keys())
@@ -103,21 +69,18 @@ def get_cosine_similarity(text1, text2):
     sum1 = sum([vec1[x]**2 for x in vec1.keys()])
     sum2 = sum([vec2[x]**2 for x in vec2.keys()])
     denominator = math.sqrt(sum1) * math.sqrt(sum2)
-    
-    if denominator == 0: return 0.0
-    else: return numerator / denominator
+    return 0.0 if denominator == 0 else numerator / denominator
 
-# --- STEP 5: SPLIT DETECTION ---
 def check_line_splits(l_text, r_idx, right_list_data):
     """
-    Checks if merging the match with a neighbor (Next OR Previous) improves the score.
-    Logic based on LHDiff paper (Slide 357).
-    Returns: (merged_text, neighbor_index_to_mark_as_used)
+    Step 5: Detect Line Splits (Bi-Directional)
+    Checks if merging the best match with its neighbor (Next or Previous)
+    improves the Levenshtein score.
     """
     current_match_text = ""
-    
-    # 1. Locate current match
     current_list_pos = -1
+    
+    # Locate current match in the candidate list
     for i, (idx, text) in enumerate(right_list_data):
         if idx == r_idx:
             current_match_text = text
@@ -128,7 +91,7 @@ def check_line_splits(l_text, r_idx, right_list_data):
 
     dist_single = levenshtein_distance(l_text, current_match_text)
     
-    # 2. Try Forward Split (Merge with Next Line)
+    # Check Forward Split (Merge with Next)
     if current_list_pos + 1 < len(right_list_data):
         next_idx, next_text = right_list_data[current_list_pos + 1]
         if next_idx == r_idx + 1:
@@ -137,7 +100,7 @@ def check_line_splits(l_text, r_idx, right_list_data):
             if dist_fwd < dist_single:
                 return merged_fwd, next_idx
 
-    # 3. Try Backward Split (Merge with Previous Line)
+    # Check Backward Split (Merge with Previous)
     if current_list_pos > 0:
         prev_idx, prev_text = right_list_data[current_list_pos - 1]
         if prev_idx == r_idx - 1:
@@ -148,69 +111,102 @@ def check_line_splits(l_text, r_idx, right_list_data):
                 
     return None, None
 
-# --- MAIN EXECUTION ---
-if __name__ == "__main__":
-    # 1. Set up the Argument Parser
-    # This lets us run the script with flags: python lhdiff.py file1 file2
-    parser = argparse.ArgumentParser(description="LHDiff: Language-Independent Line Tracking")
-    parser.add_argument("old_file", help="Path to the original file (Old Version)")
-    parser.add_argument("new_file", help="Path to the modified file (New Version)")
+def run_lhdiff(old_file_path, new_file_path):
+    """
+    The Main Controller.
+    Takes two file paths, runs the algorithm, and returns a list of results.
+    Return format: [(OldLineNum, [NewLineNum1, NewLineNum2...]), ...]
+    """
+    lines_a = preprocess_file(old_file_path)
+    lines_b = preprocess_file(new_file_path)
     
-    # Check if arguments were actually passed
-    if len(sys.argv) < 3:
-        parser.print_help()
-        sys.exit(1)
-        
-    args = parser.parse_args()
-    
-    print(f"--- LHDiff Processing ---")
-    print(f"Old File: {args.old_file}")
-    print(f"New File: {args.new_file}")
+    if not lines_a or not lines_b:
+        return []
 
-    # 2. Read the files provided in the command line
-    try:
-        lines_a = preprocess_file(args.old_file)
-        lines_b = preprocess_file(args.new_file)
-    except FileNotFoundError as e:
-        print(f"Error: Could not find file. {e}")
-        sys.exit(1)
+    # --- Step 2: Unix Diff (Anchors) ---
+    matcher = difflib.SequenceMatcher(None, lines_a, lines_b)
+    results = []
     
-    # 3. Run the Algorithm (Same logic as before)
-    left, right = get_unmatched_lines(lines_a, lines_b)
+    # Store anchors first
+    for block in matcher.get_matching_blocks():
+        start_a, start_b, length = block
+        for i in range(length):
+            # +1 because humans count from 1
+            results.append((start_a + i + 1, [start_b + i + 1]))
+
+    # --- Prepare for Step 4 ---
+    # We need to isolate the lines that *didn't* match (the gaps)
+    left_list = []
+    right_list = []
+    last_a = 0
+    last_b = 0
     
+    for match in matcher.get_matching_blocks():
+        start_a, start_b, length = match
+        for i in range(last_a, start_a):
+            left_list.append((i, lines_a[i]))
+        for i in range(last_b, start_b):
+            right_list.append((i, lines_b[i]))
+        last_a = start_a + length
+        last_b = start_b + length
+
+    # --- Step 4: Resolve Conflicts & Step 5: Splits ---
     used_new_lines = set()
     
-    print("\n--- Mappings ---")
-    
-    for l_idx, l_text in left:
+    for l_idx, l_text in left_list:
         best_score = -1
         best_match_index = -1
-        best_match_text = ""
         
         context_a = get_context_string(lines_a, l_idx)
         
-        for r_idx, r_text in right:
+        # Compare against all available lines in the gap
+        for r_idx, r_text in right_list:
             if r_idx in used_new_lines: continue
             
             context_b = get_context_string(lines_b, r_idx)
-            
             content_sim = get_content_similarity(l_text, r_text)
             context_sim = get_cosine_similarity(context_a, context_b)
-            combined_score = (0.6 * content_sim) + (0.4 * context_sim)
+            
+            # Weighted Average Formula
+            combined_score = (CONTENT_WEIGHT * content_sim) + (CONTEXT_WEIGHT * context_sim)
             
             if combined_score > best_score:
                 best_score = combined_score
                 best_match_index = r_idx
-                best_match_text = r_text
         
-        if best_score > 0.40: 
-            improved_match, neighbor_idx = check_line_splits(l_text, best_match_index, right)
+        # Threshold Check (Using Global Var)
+        if best_score > MATCH_THRESHOLD:
+            improved_match, neighbor_idx = check_line_splits(l_text, best_match_index, right_list)
             
             if improved_match:
-                # Output formatted for easy reading or parsing later
-                print(f"{l_idx+1} -> {min(best_match_index, neighbor_idx)+1},{max(best_match_index, neighbor_idx)+1} [Split] (Score: {best_score:.2f})")
+                # Map to both lines (Split detected)
+                idx1 = min(best_match_index, neighbor_idx) + 1
+                idx2 = max(best_match_index, neighbor_idx) + 1
+                results.append((l_idx + 1, [idx1, idx2]))
                 used_new_lines.add(best_match_index)
-                used_new_lines.add(neighbor_idx) 
+                used_new_lines.add(neighbor_idx)
             else:
-                print(f"{l_idx+1} -> {best_match_index+1} (Score: {best_score:.2f})")
+                # Map to single line
+                results.append((l_idx + 1, [best_match_index + 1]))
                 used_new_lines.add(best_match_index)
+
+    # Sort results by Old Line Number for readability
+    results.sort(key=lambda x: x[0])
+    return results
+
+# ==========================================
+# COMMAND LINE INTERFACE (The "Driver")
+# ==========================================
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="LHDiff Tool")
+    parser.add_argument("old_file", help="Path to Old Version")
+    parser.add_argument("new_file", help="Path to New Version")
+    args = parser.parse_args()
+
+    # Run the engine
+    mappings = run_lhdiff(args.old_file, args.new_file)
+    
+    # Print results to screen
+    for old_line, new_lines in mappings:
+        new_lines_str = ",".join(map(str, new_lines))
+        print(f"{old_line} -> {new_lines_str}")

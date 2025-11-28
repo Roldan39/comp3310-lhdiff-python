@@ -33,7 +33,6 @@ def preprocess_file(filepath):
                 line = line.strip().lower()
                 # Split symbols but keep them as tokens
                 # "array[i]" -> "array [ i ]"
-                # This helps alignment but we rely on Two-Pass to fix the "genericness" issue
                 line = re.sub(r'([^\w\s])', r' \1 ', line)
                 line = " ".join(line.split())
                 clean_lines.append(line)
@@ -62,7 +61,6 @@ def levenshtein_distance(s1, s2):
     return previous_row[-1]
 
 def get_content_similarity(s1, s2):
-    # Short-circuit for empty lines
     if not s1 and not s2: return 1.0
     if not s1 or not s2: return 0.0
     
@@ -83,11 +81,10 @@ def get_cosine_similarity(text1, text2):
     return 0.0 if denominator == 0 else numerator / denominator
 
 def check_line_splits(l_text, r_idx, right_list_data):
-    """ Step 5: Detect Line Splits """
+    """ Step 5a: Detect Line Splits (One Old -> Many New) """
     current_match_text = ""
     current_list_pos = -1
     
-    # Locate current match
     for i, (idx, text) in enumerate(right_list_data):
         if idx == r_idx:
             current_match_text = text
@@ -118,19 +115,37 @@ def check_line_splits(l_text, r_idx, right_list_data):
                 
     return None, None
 
+def check_line_merges(l_idx, l_text, r_text, lines_a):
+    """ 
+    Step 5b: Detect Line Merges (Many Old -> One New) 
+    Checks if combining the current Old line with the Next Old line 
+    matches the New line better.
+    """
+    # Look ahead in the OLD file
+    if l_idx + 1 < len(lines_a):
+        next_l_text = lines_a[l_idx + 1]
+        merged_text = l_text + " " + next_l_text
+        
+        dist_single = levenshtein_distance(l_text, r_text)
+        dist_merged = levenshtein_distance(merged_text, r_text)
+        
+        # If the merged version is closer to the New Line than the single version
+        if dist_merged < dist_single:
+            return True, l_idx + 1
+            
+    return False, -1
+
 def run_lhdiff(old_file_path, new_file_path):
     lines_a = preprocess_file(old_file_path)
     lines_b = preprocess_file(new_file_path)
     
     if not lines_a or not lines_b: return []
 
-    # --- Step 2: Unix Diff (Anchors) ---
     matcher = difflib.SequenceMatcher(None, lines_a, lines_b)
     results = []
     
-    # Used to track what is already matched
     used_new_lines = set()
-    used_old_lines = set() # NEW: Track old lines too
+    used_old_lines = set()
 
     # 1. Exact Matches (Anchors)
     for block in matcher.get_matching_blocks():
@@ -139,29 +154,25 @@ def run_lhdiff(old_file_path, new_file_path):
             old_idx = start_a + i + 1
             new_idx = start_b + i + 1
             results.append((old_idx, [new_idx]))
-            used_old_lines.add(old_idx - 1) # 0-indexed for set
+            used_old_lines.add(old_idx - 1)
             used_new_lines.add(new_idx - 1)
 
-    # Prepare Gap Lists
-    # We essentially want ALL lines, but we will skip the 'used' ones in the loop
-    # This simplifies the logic vs creating separate 'left_list'/'right_list'
     left_list = [(i, lines_a[i]) for i in range(len(lines_a))]
     right_list = [(i, lines_b[i]) for i in range(len(lines_b))]
 
-    # --- STRATEGY: TWO-PASS MATCHING ---
-    
-    # Function to run a matching pass
+    # --- TWO-PASS MATCHING ---
     def run_pass(threshold):
         for l_idx, l_text in left_list:
-            if l_idx in used_old_lines: continue # Skip already matched
+            if l_idx in used_old_lines: continue
             
             best_score = -1
             best_match_index = -1
+            best_match_text = ""
             
             context_a = get_context_string(lines_a, l_idx)
             
             for r_idx, r_text in right_list:
-                if r_idx in used_new_lines: continue # Skip already taken
+                if r_idx in used_new_lines: continue
                 
                 context_b = get_context_string(lines_b, r_idx)
                 content_sim = get_content_similarity(l_text, r_text)
@@ -172,30 +183,45 @@ def run_lhdiff(old_file_path, new_file_path):
                 if combined_score > best_score:
                     best_score = combined_score
                     best_match_index = r_idx
+                    best_match_text = r_text
             
             if best_score > threshold:
-                # Check for Splits (Only in final pass or both? Let's do both to be safe)
-                improved_match, neighbor_idx = check_line_splits(l_text, best_match_index, right_list)
+                # 1. Check for SPLITS (One Old -> Two New)
+                improved_match_split, neighbor_idx = check_line_splits(l_text, best_match_index, right_list)
                 
-                # Verify split neighbor isn't used
-                if improved_match and neighbor_idx not in used_new_lines:
+                # 2. Check for MERGES (Two Old -> One New)
+                is_merge, merge_neighbor_idx = check_line_merges(l_idx, l_text, best_match_text, lines_a)
+
+                if improved_match_split and neighbor_idx not in used_new_lines:
+                     # It's a SPLIT
                      idx1 = min(best_match_index, neighbor_idx) + 1
                      idx2 = max(best_match_index, neighbor_idx) + 1
                      results.append((l_idx + 1, [idx1, idx2]))
                      used_new_lines.add(best_match_index)
                      used_new_lines.add(neighbor_idx)
                      used_old_lines.add(l_idx)
+                
+                elif is_merge and merge_neighbor_idx not in used_old_lines:
+                     # It's a MERGE
+                     # Map CURRENT Old Line
+                     results.append((l_idx + 1, [best_match_index + 1]))
+                     # Map NEXT Old Line to same New Line
+                     results.append((merge_neighbor_idx + 1, [best_match_index + 1]))
+                     
+                     used_new_lines.add(best_match_index)
+                     used_old_lines.add(l_idx)
+                     used_old_lines.add(merge_neighbor_idx)
+
                 else:
+                     # Standard 1-to-1 Match
                      results.append((l_idx + 1, [best_match_index + 1]))
                      used_new_lines.add(best_match_index)
                      used_old_lines.add(l_idx)
 
-    # PASS 1: The "Hawk" - Find unique, high-confidence matches
-    # This locks in the obvious stuff so it doesn't get confused later
+    # Pass 1: Hawk (High confidence)
     run_pass(PASS1_THRESHOLD)
 
-    # PASS 2: The "Mouse" - Find the remaining matches with lower confidence
-    # Now that the unique lines are taken, we can safely match the common stuff
+    # Pass 2: Mouse (Fill gaps)
     run_pass(PASS2_THRESHOLD)
 
     results.sort(key=lambda x: x[0])

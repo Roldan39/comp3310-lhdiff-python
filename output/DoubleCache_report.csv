@@ -1,13 +1,13 @@
-Old Line,Actual New,Predicted New,Result
-107,102,102,PASS
-108,102,102,PASS
-109,102,Deleted,FAIL
-110,102,103,FAIL
-111,102,103,FAIL
-112,102,Deleted,FAIL
-113,103,Deleted,FAIL
-114,103,Deleted,FAIL
-115,103,Deleted,FAIL
-116,103,Deleted,FAIL
-117,103,Deleted,FAIL
-118,103,Deleted,FAIL
+Old Line,Expected,Predicted,Result
+107,[102],[],FAIL
+108,[102],[],FAIL
+109,[102],[],FAIL
+110,[102],[102],PASS
+111,[102],[102],PASS
+112,[102],[],FAIL
+113,[103],[],FAIL
+114,[103],[],FAIL
+115,[103],[],FAIL
+116,[103],[103],PASS
+117,[103],[103],PASS
+118,[103],[],FAIL

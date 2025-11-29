@@ -1,7 +1,14 @@
-Old Line,Actual New,Predicted New,Result
-288,288,288,PASS
-289,289,289,PASS
-290,290,290,PASS
-295,293,293,PASS
-296,294,294,PASS
-299,295,295,PASS
+Old Line,Expected,Predicted,Result
+287,[],[],PASS
+288,[288],[288],PASS
+289,[289],[289],PASS
+290,[290],[290],PASS
+291,[],[],PASS
+292,[],[293],FAIL
+294,[],[],PASS
+295,[293],[],FAIL
+296,[294],[294],PASS
+297,[],[],PASS
+298,[],[],PASS
+299,[295],[295],PASS
+300,[],[],PASS

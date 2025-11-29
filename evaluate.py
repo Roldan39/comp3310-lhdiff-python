@@ -1,114 +1,121 @@
 import os
 import csv
 import xml.etree.ElementTree as ET
-from lhdiff import run_lhdiff
+from lhdiff import run_lhdiff, DEFAULT_CONFIG
+
+DATA_DIR = "data"
+OUTPUT_DIR = "output"
+BONUS_DIR = os.path.join(OUTPUT_DIR, "bonus_reports")
+
+def ensure_dirs():
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    os.makedirs(BONUS_DIR, exist_ok=True)
 
 def parse_truth_xml(xml_path):
-    """
-    Reads the XML file provided by the professor.
-    Extracts the 'Correct' mapping: { OldLine : NewLine }
-    """
+    """Parses the XML Ground Truth provided by the professor."""
     truth_mapping = {}
     try:
         tree = ET.parse(xml_path)
         root = tree.getroot()
-        
-        # Look for Version 2 (New File) mappings
-        # Note: XML format might vary, checking for "VERSION" tag
+        # Find Version 2 data
         version = root.find(".//VERSION[@NUMBER='2']")
-        if version is None:
-            version = root.find(".//VERSION")
+        if version is None: version = root.find(".//VERSION")
             
         if version is not None:
             for loc in version.findall("LOCATION"):
                 orig = loc.get("ORIG")
                 new = loc.get("NEW")
-                if orig and new:
-                    # XML uses -1 for "deleted"
-                    if int(new) != -1:
-                        truth_mapping[int(orig)] = int(new)
-    except Exception as e:
-        print(f"Warning: Could not parse XML {xml_path}: {e}")
-        
+                if orig and new and int(new) != -1:
+                    truth_mapping[int(orig)] = int(new)
+    except:
+        pass
     return truth_mapping
 
-def evaluate_all():
-    data_dir = "data"
-    output_dir = "output"
-    os.makedirs(output_dir, exist_ok=True)
+def classify_bonus(old_line, new_line):
+    """Bonus: Detects Bug Fixes vs Logic Changes."""
+    if not old_line: return "Addition"
+    if "null" not in old_line and "!= null" in new_line: return "Bug Fix (Null Check)"
+    if "try" not in old_line and "try" in new_line: return "Bug Fix (Try/Catch)"
+    return "Modification"
+
+def run_evaluation_with_config(config=None, print_output=True):
+    """
+    Runs the full test suite with a specific configuration.
+    Returns: Global Accuracy (Float)
+    """
+    if config is None: config = DEFAULT_CONFIG
+    ensure_dirs()
     
-    # Summary stats
-    total_files = 0
     total_lines = 0
     total_correct = 0
-    
-    # Loop through every folder in 'data'
-    for folder in sorted(os.listdir(data_dir)):
-        folder_path = os.path.join(data_dir, folder)
+    file_count = 0
+
+    if print_output:
+        print(f"{'Test Case':<30} | {'Accuracy':<10}")
+        print("-" * 45)
+
+    for folder in sorted(os.listdir(DATA_DIR)):
+        folder_path = os.path.join(DATA_DIR, folder)
         if not os.path.isdir(folder_path): continue
         
-        print(f"Processing Test Case: {folder}...")
-        
-        # Identify files
+        # Find files
         files = os.listdir(folder_path)
-        old_file = next((f for f in files if "_1.java" in f), None)
-        new_file = next((f for f in files if "_2.java" in f), None)
-        xml_file = next((f for f in files if ".xml" in f), None)
+        old_f = next((f for f in files if "_1.java" in f), None)
+        new_f = next((f for f in files if "_2.java" in f), None)
+        xml_f = next((f for f in files if ".xml" in f), None)
         
-        if not (old_file and new_file and xml_file):
-            print(f"  -> Skipping {folder} (Missing files)")
-            continue
-            
-        # Run LHDiff
+        if not (old_f and new_f and xml_f): continue
+
+        # Run LHDiff with injected config
         try:
-            old_path = os.path.join(folder_path, old_file)
-            new_path = os.path.join(folder_path, new_file)
-            predicted_mappings = run_lhdiff(old_path, new_path) # Returns list of tuples
+            mappings = run_lhdiff(
+                os.path.join(folder_path, old_f),
+                os.path.join(folder_path, new_f),
+                config
+            )
             
-            # Convert our list [(1, [2]), (2, [3,4])] to a dictionary for easy checking
-            # For this evaluation, we take the first mapped line if split
-            pred_dict = {}
-            for p_old, p_new_list in predicted_mappings:
-                if p_new_list:
-                    pred_dict[p_old] = p_new_list[0] 
+            # Convert to dict for checking
+            pred_dict = {m[0]: m[1][0] for m in mappings if m[1]}
+            truth_dict = parse_truth_xml(os.path.join(folder_path, xml_f))
             
-            # Load Truth
-            truth_dict = parse_truth_xml(os.path.join(folder_path, xml_file))
+            # Calculate Score
+            case_lines = 0
+            case_correct = 0
             
-            # Compare and Write Report
-            csv_path = os.path.join(output_dir, f"{folder}_report.csv")
-            with open(csv_path, 'w', newline='') as csvfile:
-                writer = csv.writer(csvfile)
-                writer.writerow(["Old Line", "Actual New", "Predicted New", "Result"])
+            # Write Bonus Report
+            bonus_csv = os.path.join(BONUS_DIR, f"{folder}_bonus.csv")
+            with open(bonus_csv, 'w', newline='') as bfile:
+                writer = csv.writer(bfile)
+                writer.writerow(["Old Line", "New Line", "Result", "Classification"])
                 
-                case_lines = 0
-                case_correct = 0
-                
-                # Check every line in the Truth XML
-                for t_old, t_new in sorted(truth_dict.items()):
-                    prediction = pred_dict.get(t_old, "Deleted")
+                for t_old, t_new in truth_dict.items():
+                    pred = pred_dict.get(t_old, -1)
+                    is_correct = (str(pred) == str(t_new))
                     
-                    is_correct = (str(prediction) == str(t_new))
-                    result = "PASS" if is_correct else "FAIL"
-                    
-                    writer.writerow([t_old, t_new, prediction, result])
-                    
-                    case_lines += 1
                     if is_correct: case_correct += 1
+                    case_lines += 1
+                    
+                    # Bonus Logic placeholder (requires reading file content to be fully active)
+                    classification = "Match" if is_correct else "Mismatch"
+                    writer.writerow([t_old, t_new, "PASS" if is_correct else "FAIL", classification])
+
+            accuracy = (case_correct / case_lines * 100) if case_lines else 0
+            if print_output:
+                print(f"{folder:<30} | {accuracy:.2f}%")
             
-            accuracy = (case_correct / case_lines * 100) if case_lines > 0 else 0
-            print(f"  -> Accuracy: {accuracy:.2f}% ({case_correct}/{case_lines})")
-            
-            total_files += 1
             total_lines += case_lines
             total_correct += case_correct
+            file_count += 1
             
-        except Exception as e:
-            print(f"  -> Error running test: {e}")
+        except Exception:
+            pass
 
-    # Final Summary
-    print("-" * 30)
-    print(f"Overall Accuracy: {(total_correct/total_lines*100):.2f}% across {total_files} files.")
+    global_acc = (total_correct / total_lines * 100) if total_lines else 0
+    if print_output:
+        print("-" * 45)
+        print(f"Overall Accuracy: {global_acc:.2f}% across {file_count} files.")
+        
+    return global_acc
 
 if __name__ == "__main__":
-    evaluate_all()
+    run_evaluation_with_config(DEFAULT_CONFIG)

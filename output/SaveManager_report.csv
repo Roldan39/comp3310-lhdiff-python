@@ -1,5 +1,7 @@
-Old Line,Actual New,Predicted New,Result
-213,159,159,PASS
-214,160,160,PASS
-215,161,958,FAIL
-218,163,959,FAIL
+Old Line,Expected,Predicted,Result
+213,[159],[159],PASS
+214,[160],[160],PASS
+215,[161],[891],FAIL
+216,[],[],PASS
+217,[],[],PASS
+218,[163],[959],FAIL

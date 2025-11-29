@@ -1,7 +1,7 @@
-Old Line,Actual New,Predicted New,Result
-90,62,62,PASS
-91,63,63,PASS
-92,64,64,PASS
-93,66,66,PASS
-94,67,67,PASS
-95,69,69,PASS
+Old Line,Expected,Predicted,Result
+90,[62],[62],PASS
+91,[63],[63],PASS
+92,[64],"[64, 65]",FAIL
+93,[66],[66],PASS
+94,[67],"[67, 68]",FAIL
+95,[69],[69],PASS

@@ -1,4 +1,4 @@
-Old Line,Actual New,Predicted New,Result
-161,161,161,PASS
-162,163,163,PASS
-163,164,164,PASS
+Old Line,Expected,Predicted,Result
+161,[161],[161],PASS
+162,[163],[163],PASS
+163,[164],[164],PASS

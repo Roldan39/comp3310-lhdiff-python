@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.env
+
+# Mac
+.DS_Store
+
+# Project Specific
+output/
+data_generated/
+draft_email_to_prof.md

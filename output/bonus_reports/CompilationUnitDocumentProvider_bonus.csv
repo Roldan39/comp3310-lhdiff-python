@@ -4,11 +4,11 @@ Old Line,New Line,Result,Classification
 200,193,PASS,Match
 201,194,PASS,Match
 202,195,PASS,Match
-205,198,FAIL,Mismatch
-207,200,PASS,Match
+205,198,PASS,Match
+207,200,FAIL,Mismatch
 208,201,PASS,Match
 209,202,PASS,Match
-213,204,FAIL,Mismatch
+213,204,PASS,Match
 214,205,PASS,Match
 215,206,PASS,Match
 217,211,PASS,Match

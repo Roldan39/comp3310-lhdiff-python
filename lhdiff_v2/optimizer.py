@@ -68,14 +68,16 @@ class GeneticOptimizer:
 
     def _evaluate(self, config: Dict) -> float:
         """Runs the engine with config and compares against truth."""
+        
+        total = len(self.truth_mapping)
+        if total == 0: return 0.0
+
         mappings = self.engine.run(config)
         
         # Convert to dict for checking
         pred_dict = {m[0]: m[1][0] for m in mappings if m[1]}
         
         correct = 0
-        total = len(self.truth_mapping)
-        if total == 0: return 0.0
         
         for t_old, t_new in self.truth_mapping.items():
             if pred_dict.get(t_old) == t_new:

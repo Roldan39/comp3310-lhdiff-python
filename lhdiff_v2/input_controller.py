@@ -33,6 +33,10 @@ class InputParser(ABC):
         Returns:
             str: The normalized line.
         """
+        # Binary Check: If line contains null bytes, it's likely binary
+        if '\0' in line:
+            return ""
+            
         line = line.strip().lower()
         line = re.sub(r'([^\w\s])', r' \1 ', line)
         return " ".join(line.split())
@@ -49,7 +53,9 @@ class RawFileParser(InputParser):
         try:
             with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
                 for line in f:
-                    lines.append(self.preprocess_line(line))
+                    processed = self.preprocess_line(line)
+                    if processed: # Skip empty/binary lines
+                        lines.append(processed)
         except FileNotFoundError:
             print(f"Warning: File not found: {filepath}")
             return []
@@ -63,21 +69,33 @@ class CombinedFileParser(InputParser):
     def parse(self, source_a: str, source_b: str = None) -> Tuple[List[str], List[str]]:
         lines_a, lines_b = [], []
         current_section = None
+        found_old = False
+        found_new = False
+        
         try:
             with open(source_a, 'r', encoding='utf-8', errors='ignore') as f:
                 for line in f:
                     stripped = line.strip()
                     if stripped == self.DELIMITER_OLD:
                         current_section = "OLD"
+                        found_old = True
                         continue
                     elif stripped == self.DELIMITER_NEW:
                         current_section = "NEW"
+                        found_new = True
                         continue
                     
+                    processed = self.preprocess_line(line)
+                    if not processed: continue
+
                     if current_section == "OLD":
-                        lines_a.append(self.preprocess_line(line))
+                        lines_a.append(processed)
                     elif current_section == "NEW":
-                        lines_b.append(self.preprocess_line(line))
+                        lines_b.append(processed)
+                        
+            if not found_old or not found_new:
+                print(f"Warning: Missing delimiters in {source_a}. Found OLD: {found_old}, NEW: {found_new}")
+                
         except FileNotFoundError:
             print(f"Warning: File not found: {source_a}")
             return [], []

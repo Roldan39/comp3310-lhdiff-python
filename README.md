@@ -107,3 +107,9 @@ This script uses a **Genetic Algorithm** to efficiently explore the parameter sp
 *   **CONTEXT_WEIGHT:** Importance of the surrounding lines (1.0 - CONTENT_WEIGHT).
 *   **PASS1_THRESHOLD:** Minimum score required for a match in the first pass.
 *   **PASS2_THRESHOLD:** Minimum score required for a match in the second pass.
+
+---
+
+## Limitations & Known Issues
+*   **Ground Truth Quality:** The accuracy of the evaluation script depends entirely on the quality of the provided Ground Truth files. If the Ground Truth contains errors (e.g., mapping to non-existent lines or incorrect indices), the reported accuracy will be artificially low. We recommend manually verifying any test cases with accuracy below 75%.
+*   **Context Sensitivity:** Large insertions (like massive JavaDoc blocks) can temporarily disrupt the "Context" similarity for surrounding lines, potentially requiring parameter tuning (lowering `CONTEXT_WEIGHT`) for those specific files.

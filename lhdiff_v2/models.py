@@ -12,7 +12,7 @@ class LineNode:
         tokens (List[str]): Tokenized version of the content.
         simhash (int): The 64-bit SimHash fingerprint of the line context.
     """
-    line_number: int
+    original_line_number: int
     content: str
     tokens: List[str]
     simhash: int

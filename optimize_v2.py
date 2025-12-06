@@ -20,8 +20,8 @@ from lhdiff_v2.engine import LHEngine
 
 # Optimization Constants
 NUM_GENERATIONS = 5
-SAMPLES_PER_GEN = 10
-TOP_K_SURVIVORS = 3
+SAMPLES_PER_GEN = 20
+TOP_K_SURVIVORS = 5
 
 DEFAULT_RANGES = {
     "CONTENT_WEIGHT": (0.4, 0.9),

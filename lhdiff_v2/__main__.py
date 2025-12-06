@@ -19,10 +19,10 @@ from .optimizer import GeneticOptimizer
 
 # Default Configuration
 DEFAULT_CONFIG = {
-    "CONTENT_WEIGHT": 0.68,
-    "CONTEXT_WEIGHT": 0.32,
-    "PASS1_THRESHOLD": 0.88,
-    "PASS2_THRESHOLD": 0.54
+    "CONTENT_WEIGHT": 0.76,
+    "CONTEXT_WEIGHT": 0.24,
+    "PASS1_THRESHOLD": 0.66,
+    "PASS2_THRESHOLD": 0.42
 }
 
 def parse_truth_xml(xml_path):

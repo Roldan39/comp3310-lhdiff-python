@@ -18,10 +18,10 @@ from lhdiff_v2.engine import LHEngine
 
 # Default Config
 DEFAULT_CONFIG = {
-    "CONTENT_WEIGHT": 0.9,
-    "CONTEXT_WEIGHT": 0.1,
-    "PASS1_THRESHOLD": 0.67,
-    "PASS2_THRESHOLD": 0.4
+    "CONTENT_WEIGHT": 0.41,
+    "CONTEXT_WEIGHT": 0.64,
+    "PASS1_THRESHOLD": 0.49,
+    "PASS2_THRESHOLD": 0.59
 }
 
 def parse_truth_json(json_path):

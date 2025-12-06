@@ -1,9 +1,0 @@
-Old Line,New Line,Result,Classification
-2016,2080,PASS,Match
-2017,2081,PASS,Match
-2018,2082,PASS,Match
-2021,2084,PASS,Match
-2024,2085,FAIL,Mismatch
-2025,2086,PASS,Match
-2026,2087,PASS,Match
-2027,2088,PASS,Match

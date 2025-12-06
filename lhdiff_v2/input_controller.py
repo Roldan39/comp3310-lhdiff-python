@@ -10,16 +10,16 @@ class InputParser(ABC):
     """Abstract base class for input parsers."""
     
     @abstractmethod
-    def parse(self, source_a: str, source_b: str = None) -> Tuple[List[str], List[str]]:
+    def parse(self, source_a: str, source_b: str = None) -> Tuple[List[Tuple[int, str]], List[Tuple[int, str]]]:
         """
-        Parses the input source(s) into two lists of strings.
+        Parses the input source(s) into two lists of (line_number, content) tuples.
         
         Args:
             source_a (str): The first source path.
             source_b (str, optional): The second source path.
 
         Returns:
-            Tuple[List[str], List[str]]: (lines_from_a, lines_from_b)
+            Tuple[List[Tuple[int, str]], List[Tuple[int, str]]]: (lines_from_a, lines_from_b)
         """
         pass
 
@@ -43,19 +43,19 @@ class InputParser(ABC):
 
 class RawFileParser(InputParser):
     """Parses two separate raw text/code files."""
-    def parse(self, source_a: str, source_b: str = None) -> Tuple[List[str], List[str]]:
+    def parse(self, source_a: str, source_b: str = None) -> Tuple[List[Tuple[int, str]], List[Tuple[int, str]]]:
         if not source_b:
             raise ValueError("RawFileParser requires two files.")
         return self._read_file(source_a), self._read_file(source_b)
 
-    def _read_file(self, filepath: str) -> List[str]:
+    def _read_file(self, filepath: str) -> List[Tuple[int, str]]:
         lines = []
         try:
             with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
-                for line in f:
+                for i, line in enumerate(f):
                     processed = self.preprocess_line(line)
                     if processed: # Skip empty/binary lines
-                        lines.append(processed)
+                        lines.append((i + 1, processed))
         except FileNotFoundError:
             print(f"Warning: File not found: {filepath}")
             return []
@@ -66,7 +66,7 @@ class CombinedFileParser(InputParser):
     DELIMITER_OLD = "--- OLD FILE ---"
     DELIMITER_NEW = "--- NEW FILE ---"
 
-    def parse(self, source_a: str, source_b: str = None) -> Tuple[List[str], List[str]]:
+    def parse(self, source_a: str, source_b: str = None) -> Tuple[List[Tuple[int, str]], List[Tuple[int, str]]]:
         lines_a, lines_b = [], []
         current_section = None
         found_old = False
@@ -74,7 +74,7 @@ class CombinedFileParser(InputParser):
         
         try:
             with open(source_a, 'r', encoding='utf-8', errors='ignore') as f:
-                for line in f:
+                for i, line in enumerate(f):
                     stripped = line.strip()
                     if stripped == self.DELIMITER_OLD:
                         current_section = "OLD"
@@ -89,9 +89,9 @@ class CombinedFileParser(InputParser):
                     if not processed: continue
 
                     if current_section == "OLD":
-                        lines_a.append(processed)
+                        lines_a.append((i + 1, processed))
                     elif current_section == "NEW":
-                        lines_b.append(processed)
+                        lines_b.append((i + 1, processed))
                         
             if not found_old or not found_new:
                 print(f"Warning: Missing delimiters in {source_a}. Found OLD: {found_old}, NEW: {found_new}")
@@ -103,7 +103,7 @@ class CombinedFileParser(InputParser):
 
 class XMLInputParser(InputParser):
     """Parses an XML file containing <old> and <new> elements."""
-    def parse(self, source_a: str, source_b: str = None) -> Tuple[List[str], List[str]]:
+    def parse(self, source_a: str, source_b: str = None) -> Tuple[List[Tuple[int, str]], List[Tuple[int, str]]]:
         lines_a, lines_b = [], []
         try:
             tree = ET.parse(source_a)
@@ -112,11 +112,15 @@ class XMLInputParser(InputParser):
             new_elem = root.find(".//new")
             
             if old_elem is not None and old_elem.text:
-                for line in old_elem.text.splitlines():
-                    lines_a.append(self.preprocess_line(line))
+                for i, line in enumerate(old_elem.text.splitlines()):
+                    processed = self.preprocess_line(line)
+                    if processed:
+                        lines_a.append((i + 1, processed))
             if new_elem is not None and new_elem.text:
-                for line in new_elem.text.splitlines():
-                    lines_b.append(self.preprocess_line(line))
+                for i, line in enumerate(new_elem.text.splitlines()):
+                    processed = self.preprocess_line(line)
+                    if processed:
+                        lines_b.append((i + 1, processed))
         except ET.ParseError:
             print(f"Error: Failed to parse XML file: {source_a}")
             return [], []
@@ -165,17 +169,20 @@ class InputController:
         if source_a.endswith('.xml'): return XMLInputParser()
         return CombinedFileParser()
 
-    def _create_nodes(self, lines: List[str]) -> List[LineNode]:
+    def _create_nodes(self, lines: List[Tuple[int, str]]) -> List[LineNode]:
         nodes = []
-        for i, content in enumerate(lines):
+        # Extract just content for context window calculation
+        content_only = [content for _, content in lines]
+        
+        for i, (line_num, content) in enumerate(lines):
             # Context for SimHash
             start = max(0, i - self.window_size)
             end = min(len(lines), i + self.window_size + 1)
-            context_text = " ".join(lines[start:end])
+            context_text = " ".join(content_only[start:end])
             simhash = SimilarityCalculator.get_simhash(context_text)
             
             nodes.append(LineNode(
-                line_number=i + 1,
+                original_line_number=line_num,
                 content=content,
                 tokens=content.split(),
                 simhash=simhash

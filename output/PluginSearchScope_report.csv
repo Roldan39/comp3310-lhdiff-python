@@ -1,9 +1,0 @@
-Old Line,Expected,Predicted,Result
-69,[63],[63],PASS
-70,[],[83],FAIL
-71,[],[81],FAIL
-72,[],[82],FAIL
-73,[65],[65],PASS
-74,[65],[65],PASS
-75,[],[],PASS
-76,[66],[66],PASS

@@ -1,5 +1,0 @@
-Old Line,New Line,Result,Classification
-213,159,PASS,Match
-214,160,PASS,Match
-215,161,FAIL,Mismatch
-218,163,FAIL,Mismatch

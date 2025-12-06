@@ -1,9 +1,0 @@
-Old Line,New Line,Result,Classification
-869,1091,FAIL,Mismatch
-870,1092,FAIL,Mismatch
-872,1094,PASS,Match
-873,1095,FAIL,Mismatch
-874,1096,FAIL,Mismatch
-876,1098,FAIL,Mismatch
-877,1099,FAIL,Mismatch
-878,1100,PASS,Match

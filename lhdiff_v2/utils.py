@@ -1,4 +1,5 @@
 import hashlib
+import difflib
 
 class SimilarityCalculator:
     """
@@ -17,11 +18,17 @@ class SimilarityCalculator:
         v = [0] * 64
         for token in tokens:
             # Create a stable hash for the token
-            token_hash = int(hashlib.md5(token.encode('utf-8')).hexdigest(), 16)
+            # optimization: use just first 16 chars of hex digest (64 bits)
+            # md5 gives 128 bits, we only need 64.
+            digest = hashlib.md5(token.encode('utf-8')).digest()
+            # unpack 8 bytes to int
+            token_hash = int.from_bytes(digest[:8], byteorder='big')
+            
             for i in range(64):
-                bit = (token_hash >> i) & 1
-                if bit == 1: v[i] += 1
-                else:        v[i] -= 1
+                if (token_hash >> i) & 1:
+                    v[i] += 1
+                else:
+                    v[i] -= 1
                 
         fingerprint = 0
         for i in range(64):

@@ -1,7 +1,0 @@
-Old Line,New Line,Result,Classification
-90,62,PASS,Match
-91,63,PASS,Match
-92,64,FAIL,Mismatch
-93,66,PASS,Match
-94,67,FAIL,Mismatch
-95,69,PASS,Match

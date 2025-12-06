@@ -86,7 +86,7 @@ class LHEngine:
         # --- STEP 1: ANCHORS ---
         # We always accept anchors first
         for i, j in self.anchors:
-            results.append((self.nodes_a[i].line_number, [self.nodes_b[j].line_number]))
+            results.append((self.nodes_a[i].original_line_number, [self.nodes_b[j].original_line_number]))
             used_old.add(i)
             used_new.add(j)
 
@@ -124,14 +124,34 @@ class LHEngine:
                             single_sim = self.matrix[i][best_match_idx][0] # Content sim from cache
                             
                             if merged_sim > single_sim:
-                                results.append((node_a.line_number, [self.nodes_b[best_match_idx].line_number, self.nodes_b[next_idx].line_number]))
+                                results.append((node_a.original_line_number, [self.nodes_b[best_match_idx].original_line_number, self.nodes_b[next_idx].original_line_number]))
                                 used_new.add(best_match_idx)
                                 used_new.add(next_idx)
                                 used_old.add(i)
                                 is_split = True
+
+                    # Check for MERGE (Two Old -> One New)
+                    # We only check this if we haven't found a split
+                    is_merge = False
+                    if not is_split and i + 1 < len(self.nodes_a):
+                        next_old_idx = i + 1
+                        if next_old_idx not in used_old:
+                            # On-the-fly calculation for merge
+                            merged_content_old = node_a.content + " " + self.nodes_a[next_old_idx].content
+                            merged_sim = SimilarityCalculator.levenshtein_similarity(merged_content_old, self.nodes_b[best_match_idx].content)
+                            
+                            single_sim = self.matrix[i][best_match_idx][0]
+                            
+                            if merged_sim > single_sim:
+                                results.append((node_a.original_line_number, [self.nodes_b[best_match_idx].original_line_number]))
+                                results.append((self.nodes_a[next_old_idx].original_line_number, [self.nodes_b[best_match_idx].original_line_number]))
+                                used_new.add(best_match_idx)
+                                used_old.add(i)
+                                used_old.add(next_old_idx)
+                                is_merge = True
                     
-                    if not is_split:
-                        results.append((node_a.line_number, [self.nodes_b[best_match_idx].line_number]))
+                    if not is_split and not is_merge:
+                        results.append((node_a.original_line_number, [self.nodes_b[best_match_idx].original_line_number]))
                         used_new.add(best_match_idx)
                         used_old.add(i)
 

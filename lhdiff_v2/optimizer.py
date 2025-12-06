@@ -5,8 +5,8 @@ from .engine import LHEngine
 
 # Optimization Constants
 NUM_GENERATIONS = 3
-SAMPLES_PER_GEN = 10
-TOP_K_SURVIVORS = 3
+SAMPLES_PER_GEN = 20
+TOP_K_SURVIVORS = 5
 
 DEFAULT_RANGES = {
     "CONTENT_WEIGHT": (0.4, 0.9),
@@ -95,17 +95,32 @@ class GeneticOptimizer:
         return cfg
 
     def _narrow_ranges(self, top_configs, current_ranges):
-        """Narrows the search ranges based on top performers."""
+        """
+        Narrows search space using Statistical Mean and Standard Deviation.
+        This is more stable than Min/Max (Outlier Resistant).
+        """
         new_ranges = current_ranges.copy()
         
-        def narrow(key):
+        def get_stat_range(key):
             values = [c[key] for c in top_configs]
-            v_min = min(values)
-            v_max = max(values)
-            padding = (v_max - v_min) * 0.2 if v_max != v_min else 0.05
-            return (max(0.0, v_min - padding), min(1.0, v_max + padding))
+            
+            # If all values are the same (variance = 0), force a small search window
+            if len(set(values)) <= 1:
+                mu = values[0]
+                sigma = 0.05 # Artificial standard deviation
+            else:
+                mu = statistics.mean(values)
+                sigma = statistics.stdev(values)
+            
+            # 95% Confidence Interval (2 Standard Deviations)
+            # We prune everything outside this range
+            lower = max(0.0, mu - (2 * sigma))
+            upper = min(1.0, mu + (2 * sigma))
+            
+            return (lower, upper)
 
-        new_ranges["CONTENT_WEIGHT"] = narrow("CONTENT_WEIGHT")
-        new_ranges["PASS1_THRESHOLD"] = narrow("PASS1_THRESHOLD")
-        new_ranges["PASS2_THRESHOLD"] = narrow("PASS2_THRESHOLD")
+        new_ranges["CONTENT_WEIGHT"] = get_stat_range("CONTENT_WEIGHT")
+        new_ranges["PASS1_THRESHOLD"] = get_stat_range("PASS1_THRESHOLD")
+        new_ranges["PASS2_THRESHOLD"] = get_stat_range("PASS2_THRESHOLD")
+        
         return new_ranges

@@ -63,12 +63,14 @@ class BatchOptimizer:
     """
     Manages the optimization process across multiple test cases.
     """
-    def __init__(self, data_dir):
+    def __init__(self, data_dir, use_full_dataset=False):
         """
         Args:
             data_dir (str): Directory containing test cases.
+            use_full_dataset (bool): If True, disables sampling.
         """
         self.data_dir = data_dir
+        self.use_full_dataset = use_full_dataset
         self.engines = [] # List of (engine, truth_mapping)
         self.ranges = DEFAULT_RANGES.copy()
         
@@ -79,9 +81,23 @@ class BatchOptimizer:
         print("Loading data and building matrices...", file=sys.stderr)
         controller = InputController()
         
-        for folder in sorted(os.listdir(self.data_dir)):
+        # 1. Get all potential folders
+        all_folders = [f for f in sorted(os.listdir(self.data_dir)) 
+                       if os.path.isdir(os.path.join(self.data_dir, f))]
+        
+        # 2. STATISTICAL SAMPLING (Pruning the Dataset)
+        # If we have too many files, just pick 10 random ones to be our "Sample Population"
+        # This reduces complexity from O(All_Files) to O(10)
+        SAMPLE_SIZE = 10 
+        if not self.use_full_dataset and len(all_folders) > SAMPLE_SIZE:
+             # Randomly select, or sort by size and pick the smallest to avoid crashes
+            import random
+            selected_folders = random.sample(all_folders, SAMPLE_SIZE)
+        else:
+            selected_folders = all_folders
+
+        for folder in selected_folders:
             folder_path = os.path.join(self.data_dir, folder)
-            if not os.path.isdir(folder_path): continue
             
             files = os.listdir(folder_path)
             
@@ -106,6 +122,12 @@ class BatchOptimizer:
             if not (old_f and new_f): continue
             if not (xml_f or json_f): continue
 
+            # SAFETY CHECK: Skip massive files before parsing
+            # If a file is > 2000 lines, skip it to save your MacBook
+            if self._is_file_too_large(os.path.join(folder_path, old_f)):
+                print(f"Skipping {folder} (File too large for optimization)", file=sys.stderr)
+                continue
+
             try:
                 nodes_a, nodes_b = controller.parse(
                     os.path.join(folder_path, old_f),
@@ -123,6 +145,15 @@ class BatchOptimizer:
             except Exception:
                 pass
         print(f"Loaded {len(self.engines)} test cases.", file=sys.stderr)
+
+    def _is_file_too_large(self, filepath, limit=2000):
+        try:
+            with open(filepath, 'r') as f:
+                for i, _ in enumerate(f):
+                    if i > limit: return True
+            return False
+        except:
+            return True
 
     def optimize(self):
         """
@@ -200,7 +231,8 @@ class BatchOptimizer:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("data_dir", nargs="?", default="data")
+    parser.add_argument("--full", action="store_true", help="Disable sampling and use invalid files check")
     args = parser.parse_args()
     
-    optimizer = BatchOptimizer(args.data_dir)
+    optimizer = BatchOptimizer(args.data_dir, use_full_dataset=args.full)
     optimizer.optimize()

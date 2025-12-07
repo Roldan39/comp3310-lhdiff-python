@@ -16,6 +16,8 @@ import xml.etree.ElementTree as ET
 from .input_controller import InputController
 from .engine import LHEngine
 from .optimizer import GeneticOptimizer
+from .visualizer import HTMLVisualizer
+from .bug_classifier import BugClassifier
 
 # Default Configuration
 DEFAULT_CONFIG = {
@@ -110,7 +112,17 @@ def main():
     # 4. Run Diff
     mappings = engine.run(config)
     
-    # 5. Output Results
+    # 5. Generate Visual Report
+    print("Generating HTML Report...", file=sys.stderr)
+    vis = HTMLVisualizer()
+    vis.generate(nodes_a, nodes_b, mappings, "lhdiff_report.html")
+    
+    # 6. Run Bonus Bug Classification
+    print("Analyzing for Bug Fixes...", file=sys.stderr)
+    classifier = BugClassifier()
+    classifier.analyze_mappings(nodes_a, nodes_b, mappings)
+    
+    # 7. Output Results
     for old, new_list in mappings:
         print(f"{old} -> {','.join(map(str, new_list))}")
 

@@ -1,6 +1,6 @@
 # comp3310-lhdiff-python
 # LHDiff V2: Modular Monolith Edition
-**COMP-3110 Project | Python Implementation v2.2**
+**COMP-3110 Project | Python Implementation v2.3**
 
 ## Overview
 LHDiff is a tool designed to track lines of source code between two versions of a file. Unlike standard `diff` utilities that only detect insertions and deletions, LHDiff uses **Context** and **Content** similarity to identify lines that have moved, been modified, split, or merged.
@@ -13,8 +13,13 @@ This implementation solves the "Line Mapping Problem" by using a hybrid approach
 * **Bi-Directional Mapping:**
     * **Split Detection:** Detects when one line splits into two (e.g., breaking long arguments).
     * **Merge Detection:** Detects when multiple lines combine into one (e.g., code cleanup).
-* **Automated Optimization:** Includes a script to find the best configuration parameters for your dataset using a Genetic Algorithm.
-* **Modular Architecture:** Clean separation of concerns (Engine, Input, Models, Optimizer).
+* **Automated Optimization (Genetic Algorithm):**
+    * **Smart Sampling:** Automatically trains on a random sample of 10 files to find optimal weights quickly.
+    * **Full Mode:** Can optionally optimize on the entire dataset using the `--full` flag.
+    * **Robustness:** Uses Standard Deviation Pruning (Bell Curve) to avoid local optima and handles massive files safely.
+*   **Visualizer:** Generates a side-by-side HTML report (`lhdiff_report.html`) to visually inspect mappings, splits, and merges.
+*   **Bug Classifier:** Analyzes mappings to detect potential bug-fix patterns (e.g., null checks, type changes) and prints a report.
+*   **Modular Architecture:** Clean separation of concerns (Engine, Input, Models, Optimizer, Visualizer, Bug Classifier).
 
 ---
 
@@ -35,12 +40,19 @@ comp3310-lhdiff-python/
 │   ├── input_controller.py # Input Parsing Strategy Pattern
 │   ├── models.py           # Data Classes (LineNode)
 │   ├── optimizer.py        # Genetic Algorithm Logic
+│   ├── visualizer.py       # HTML Generator
+│   ├── bug_classifier.py   # Heuristic Bug Detector
 │   └── utils.py            # Similarity Math (SimHash, Levenshtein)
 │
 ├── evaluate_v2.py          # Batch Evaluation Script
 ├── optimize_v2.py          # Batch Optimization Script
 │
-├── data/                   # Test Dataset
+├── data/                   # Test Datasets
+│   ├── dataset1/           # "ASTResolving" style
+│   ├── dataset2/           # "AbstractOrigin" style
+│   └── dataset3/           # "pair_XX" style
+│
+└── BENCHMARK_REPORT.md     # Detailed performance analysis
 └── README.md               # This file
 ```
 
@@ -49,44 +61,49 @@ comp3310-lhdiff-python/
 ## Usage
 
 ### 1. Running LHDiff (CLI)
-You can run the tool as a module:
+You can run the tool as a module on any pair of files:
 
-#### Option A: Two Separate Files (Standard)
 ```bash
 python -m lhdiff_v2.main path/to/old_file.java path/to/new_file.java
 ```
 
-#### Option B: Combined File
-```bash
-python -m lhdiff_v2.main path/to/combined_file.txt
-```
-
-#### Option C: XML File
-```bash
-python -m lhdiff_v2.main path/to/input.xml
-```
-
-**Output Format:** `OldLineNumber -> NewLineNumber(s)`
+**Output:**
+1.  **Standard System Output:** `OldLineNumber -> NewLineNumber(s)`
+2.  **HTML Report:** Generates `lhdiff_report.html` in the current directory.
+3.  **Bug Report:** Prints a "Bug Fix Detection Report" to stderr if potential fixes are found.
 
 ### 2. Running the Evaluation Suite
-To run the tool against the provided test dataset and calculate accuracy:
+To run the tool against a specific dataset and calculate accuracy:
 ```bash
-python evaluate_v2.py [data_dir]
+python evaluate_v2.py data/dataset1
 ```
+*   `data/dataset1`: Runs on Dataset 1 (Default).
+*   `data/dataset2`: Runs on Dataset 2.
+*   `data/dataset3`: Runs on Dataset 3.
+
 This will:
-1. Run `lhdiff` on every test case in the `data/` folder (supports both XML and JSON ground truth).
-2. Compare the results against the Ground Truth.
+1. Run `lhdiff` on every test case in the specified folder.
+2. Compare the results against the Ground Truth (JSON or XML).
 3. Print the accuracy for each test case and the overall average.
 
 ### 3. Optimizing Configuration
-To find the best parameters (Weights, Thresholds) for your specific dataset:
+To find the best parameters (Weights, Thresholds) for your dataset:
+
+#### Default (Fast & Safe)
 ```bash
-python optimize_v2.py [data_dir]
+python optimize_v2.py data/dataset1
 ```
-This script uses a **Genetic Algorithm** to efficiently explore the parameter space. It will:
-1. Load all test cases into memory (pre-calculating matrices for speed).
-2. Evolve a population of configurations over several generations.
-3. Output the best configuration found.
+*   **Behavior:** Selects a **random sample of 10 files**.
+*   **Safety:** Automatically skips massive files (>2000 lines) to prevent memory crashes.
+*   **Speed:** Fast (~30 seconds).
+
+#### Full Mode (Exhaustive)
+```bash
+python optimize_v2.py data/dataset1 --full
+```
+*   **Behavior:** Runs on **every valid file** in the directory.
+*   **Safety:** Still skips massive files (>2000 lines).
+*   **Speed:** Slower (depends on dataset size).
 
 ---
 
@@ -103,6 +120,7 @@ This script uses a **Genetic Algorithm** to efficiently explore the parameter sp
 6. **Split/Merge Detection:** Checks if merging neighbor lines improves the similarity score.
 
 ### Configuration Parameters
+The Genetic Algorithm optimizes these four parameters:
 *   **CONTENT_WEIGHT:** Importance of the line's text (0.0 - 1.0).
 *   **CONTEXT_WEIGHT:** Importance of the surrounding lines (1.0 - CONTENT_WEIGHT).
 *   **PASS1_THRESHOLD:** Minimum score required for a match in the first pass.
@@ -110,6 +128,11 @@ This script uses a **Genetic Algorithm** to efficiently explore the parameter sp
 
 ---
 
-## Limitations & Known Issues
-*   **Ground Truth Quality:** The accuracy of the evaluation script depends entirely on the quality of the provided Ground Truth files. If the Ground Truth contains errors (e.g., mapping to non-existent lines or incorrect indices), the reported accuracy will be artificially low. We recommend manually verifying any test cases with accuracy below 75%.
-*   **Context Sensitivity:** Large insertions (like massive JavaDoc blocks) can temporarily disrupt the "Context" similarity for surrounding lines, potentially requiring parameter tuning (lowering `CONTEXT_WEIGHT`) for those specific files.
+## Latest Benchmarks (v2.3)
+See `BENCHMARK_REPORT.md` for full details.
+
+| Dataset | Accuracy | Optimal Config |
+| :--- | :--- | :--- |
+| **Dataset 1** | ~80% | `Content=0.70`, `Context=0.30` |
+| **Dataset 2** | ~99% | `Content=0.45`, `Context=0.55` |
+| **Dataset 3** | 60% (Ceiling) | *Any* |

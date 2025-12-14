@@ -15,3 +15,5 @@ venv/
 output/
 
 draft_email_to_prof.md
+__pycache__/
+*.pyc

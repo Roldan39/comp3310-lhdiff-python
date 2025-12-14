@@ -5,7 +5,6 @@
 
 ![Python](https://img.shields.io/badge/Python-3.x-blue?style=for-the-badge&logo=python&logoColor=white)
 ![Status](https://img.shields.io/badge/Status-Completed-success?style=for-the-badge)
-![License](https://img.shields.io/badge/License-MIT-orange?style=for-the-badge)
 
 **COMP-3110 Project | Python Implementation v2.3**
 
@@ -215,13 +214,7 @@ comp3310-lhdiff-python/
 └── README.md               # This file
 ```
 
----
 
-## 📄 License
-
-This project is licensed under the MIT License.
-
----
 
 <div align="center">
 
